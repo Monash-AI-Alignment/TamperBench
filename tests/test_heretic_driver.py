@@ -8,6 +8,10 @@ import optuna
 import pytest
 from optuna.storages import JournalStorage
 from optuna.storages.journal import JournalFileBackend
+from tokenizers import Tokenizer
+from tokenizers.models import WordLevel
+from tokenizers.pre_tokenizers import Whitespace
+from transformers import AutoTokenizer, PreTrainedTokenizerFast
 
 from tamperbench.whitebox.utils.heretic import (
     HereticRunError,
@@ -15,6 +19,7 @@ from tamperbench.whitebox.utils.heretic import (
     check_heretic_log,
     journal_path,
     pareto_candidates,
+    reserialize_tokenizer,
     run_heretic,
     study_is_finished,
     write_restore_journal,
@@ -163,3 +168,31 @@ def test_search_command_answers_every_prompt_and_forwards_empty_prefix(tmp_path:
     assert flags["--export-strategy"] == "merge"
     assert flags["--save-directory"] == str(tmp_path / "out")
     assert command[-2:] == ["--response-prefix", ""]
+
+
+def test_reserialize_tokenizer_repairs_a_transformers_5_export(tmp_path: Path) -> None:
+    """An export whose tokenizer config this transformers cannot load gets the input tokenizer back."""
+    vocab = {"[UNK]": 0, "<eos>": 1, "hello": 2, "world": 3}
+    backend = Tokenizer(WordLevel(vocab, unk_token="[UNK]"))
+    backend.pre_tokenizer = Whitespace()
+    source = tmp_path / "input"
+    PreTrainedTokenizerFast(
+        tokenizer_object=backend, unk_token="[UNK]", eos_token="<eos>", chat_template="{{ messages[0]['content'] }}"
+    ).save_pretrained(str(source))
+
+    export = tmp_path / "export"
+    export.mkdir()
+    (export / "config.json").write_text("{}")
+    broken = json.loads((source / "tokenizer_config.json").read_text())
+    broken["extra_special_tokens"] = ["<eos>"]  # transformers 5.x style, a list rather than a dict
+    (export / "tokenizer_config.json").write_text(json.dumps(broken))
+    (export / "tokenizer.json").write_text((source / "tokenizer.json").read_text())
+    with pytest.raises(AttributeError):
+        AutoTokenizer.from_pretrained(str(export))
+
+    reserialize_tokenizer(str(source), export)
+
+    repaired = AutoTokenizer.from_pretrained(str(export))
+    assert repaired.get_vocab() == vocab
+    assert repaired.chat_template == "{{ messages[0]['content'] }}"
+    assert (export / "config.json").read_text() == "{}"

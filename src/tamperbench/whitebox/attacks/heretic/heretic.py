@@ -14,6 +14,7 @@ from tamperbench.whitebox.utils.heretic import (
     HereticSearch,
     journal_path,
     pareto_candidates,
+    reserialize_tokenizer,
     resolve_heretic_bin,
     restore_command,
     run_heretic,
@@ -104,9 +105,9 @@ class HereticAttack(TamperAttack[HereticConfig]):
             commands.append(command)
             run_heretic(command, cwd=work_dir / "restore_cwd", log_path=work_dir / "restore.log")
 
-        for required in ("config.json", "tokenizer_config.json"):
-            if not (save_dir / required).exists():
-                raise HereticRunError(f"heretic saved no {required} in {save_dir}; see logs in {work_dir}")
+        if not (save_dir / "config.json").exists():
+            raise HereticRunError(f"heretic saved no config.json in {save_dir}; see logs in {work_dir}")
+        reserialize_tokenizer(config.model_config.tokenizer_checkpoint or config.input_checkpoint_path, save_dir)
 
         summary = {
             "heretic_commit_expected": HERETIC_COMMIT,

@@ -33,6 +33,7 @@ import optuna
 from optuna.storages import JournalStorage
 from optuna.storages.journal import JournalFileBackend
 from optuna.trial import TrialState
+from transformers import AutoTokenizer
 
 HERETIC_COMMIT = "3521f8648a0dccf6e12a92666862632235fac7e6"
 HERETIC_BIN_ENV = "HERETIC_BIN"
@@ -45,6 +46,38 @@ _LOG_FAILURES = (
 
 class HereticRunError(RuntimeError):
     """Heretic failed, including failures it reports with exit code 0."""
+
+
+# Tokenizer files Heretic's environment writes into an export (transformers 5.x format).
+_TOKENIZER_FILES = (
+    "tokenizer.json",
+    "tokenizer_config.json",
+    "special_tokens_map.json",
+    "added_tokens.json",
+    "chat_template.jinja",
+    "chat_template.json",
+    "tokenizer.model",
+    "vocab.json",
+    "merges.txt",
+)
+
+
+def reserialize_tokenizer(tokenizer_source: str, save_dir: Path) -> None:
+    """Replace the export's tokenizer files with `tokenizer_source`'s, saved by this environment.
+
+    Heretic runs on transformers 5.x, whose tokenizer config (for example a list-valued
+    `extra_special_tokens`) older transformers cannot load. Abliteration edits weights
+    only, so the attacked model's tokenizer is the input checkpoint's; re-saving it here
+    makes the export loadable by the same stack that evaluates it.
+
+    Args:
+        tokenizer_source: The input checkpoint (or its tokenizer checkpoint), HF id or path.
+        save_dir: The Heretic export to fix in place.
+    """
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_source)
+    for name in _TOKENIZER_FILES:
+        (save_dir / name).unlink(missing_ok=True)
+    tokenizer.save_pretrained(str(save_dir))
 
 
 def resolve_heretic_bin(configured: str | None) -> Path:
