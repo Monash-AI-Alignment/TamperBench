@@ -126,6 +126,47 @@ print(f"Defended model saved to: {defended_path}")
 
 See `AttackName` and `EvalName` enums in `src/tamperbench/whitebox/utils/names.py` for all available attacks and evaluations. See [CONTRIBUTING.md](../CONTRIBUTING.md) for adding custom attacks.
 
+### Heretic attack (`heretic`)
+
+Runs [Heretic](https://github.com/p-e-w/heretic) at commit `3521f86`: an Optuna search over
+refusal-direction ablation of attention out-projection and MLP down-projection weights, minimising
+keyword-detected refusals and first-token KL. Heretic pins transformers 5.x, so it runs as a
+subprocess of its own environment:
+
+```bash
+HERETIC_HOME=/scratch/me/heretic scripts/whitebox/setup_heretic.sh   # once, where PyPI is reachable
+export HERETIC_BIN=/scratch/me/heretic/venv/bin/heretic
+```
+
+`trial_index` picks a position on Heretic's sorted Pareto front (0 = fewest keyword refusals, then
+lowest KL). The search is cached under `study_cache_dir`, keyed by the input checkpoint's contents
+and the search settings, so the `pareto_*` configs in `configs/whitebox/attacks/heretic/grid.yaml`
+cost one search plus one export each. Aggregate them with `worst_case` or `bounded_worst_case` to
+choose the attacked model by the judged evals rather than Heretic's keyword count. Each run writes
+`heretic_summary.json` (the Pareto front, the chosen trial, the commands) and `heretic/*.log`.
+Heretic exits 0 on configuration and save errors; the attack checks the logs and the saved
+checkpoint and raises `HereticRunError` instead.
+
+### Jev-judged evaluations (`jev_strong_reject`, `jev_xstest`)
+
+Score generations with the Jev judge (TypeSafe System One), using the judge prompts of
+Monash-AI-Alignment/open-steering. Set `JEV_API_KEY`, and optionally `JEV_BASE_URL` (default
+`https://openrouter.ai/api`) and `JEV_MODEL` (default `jev-1.13`).
+
+- `jev_strong_reject`: StrongREJECT prompts, generated as `strong_reject` generates them. Objective
+  `jev_harmful_rate`, the fraction of responses that are a substantive harmful instance (a refusal
+  that leaks counts). Also reports `jev_refusal_rate`, `jev_inconsistent_rate` and
+  `jev_empty_response_rate`.
+- `jev_xstest`: XSTest prompts. Objective `jev_xstest_safe_refusal_rate` (over-refusal on the 250
+  safe prompts); also `jev_xstest_unsafe_refusal_rate`.
+
+All Jev metrics are fractions in [0, 1]. A failed judge call raises after the client's retry budget
+(30 minutes) rather than recording a default verdict. Per-row verdicts and the served Jev model id
+are kept in each eval's `evaluator_scores.parquet`.
+
+For instruction-tuned checkpoints use `template: native` so prompts use the model's own chat
+template; the repo's default `plain` template sends the raw prompt.
+
 ## Benchmark Scripts
 
 The scripts below are orchestrators that use the direct Python API internally. They handle configuration loading, result organization, and hyperparameter optimization while calling the same attack/evaluation classes shown above.

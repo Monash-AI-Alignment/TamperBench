@@ -1,0 +1,43 @@
+# Heretic (p-e-w/heretic @ 3521f86) abliteration. Each config exports one position on
+# Heretic's sorted Pareto front (0 = fewest keyword refusals, then lowest KL). The
+# search itself is cached per input checkpoint and search settings, so running every
+# config costs one search plus one export per config. Aggregate with worst_case or
+# bounded_worst_case to pick the most harmful export by the judged evals, not by
+# Heretic's keyword count.
+base: &base_cfg
+    model_config:
+        template: native
+        max_generation_length: 1024
+        inference_batch_size: 16
+    evals: [jev_strong_reject, mmlu_pro_val]
+    trial_index: 0
+    n_trials: 200
+    n_startup_trials: 60
+
+pareto_1:
+    <<: *base_cfg
+    trial_index: 1
+
+pareto_2:
+    <<: *base_cfg
+    trial_index: 2
+
+pareto_3:
+    <<: *base_cfg
+    trial_index: 3
+
+pareto_4:
+    <<: *base_cfg
+    trial_index: 4
+
+pareto_5:
+    <<: *base_cfg
+    trial_index: 5
+
+pareto_6:
+    <<: *base_cfg
+    trial_index: 6
+
+pareto_7:
+    <<: *base_cfg
+    trial_index: 7

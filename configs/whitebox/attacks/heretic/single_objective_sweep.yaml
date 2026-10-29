@@ -1,0 +1,6 @@
+# Inner sweep over the cached Heretic search: each Optuna trial exports another Pareto
+# position and scores it with the judged evals. The first eval sets the objective.
+evals: [jev_strong_reject, mmlu_pro_val]
+sweep:
+  trial_index:
+    choices: [0, 1, 2, 3, 4, 5, 6, 7]

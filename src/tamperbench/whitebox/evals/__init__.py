@@ -12,6 +12,11 @@ from tamperbench.whitebox.evals.ifeval.ifeval import (
     IFEvalEvaluation,
     IFEvalEvaluationConfig,
 )
+from tamperbench.whitebox.evals.jev.jev import (
+    JevEvaluationConfig,
+    JevStrongRejectEvaluation,
+    JevXSTestEvaluation,
+)
 from tamperbench.whitebox.evals.lab_bench.lab_bench import (
     LabBenchEvaluation,
     LabBenchEvaluationConfig,
@@ -69,6 +74,9 @@ __all__ = [
     "IFEvalEvaluation",
     "IFEvalEvaluationConfig",
     "JailbreakBenchEvaluation",
+    "JevEvaluationConfig",
+    "JevStrongRejectEvaluation",
+    "JevXSTestEvaluation",
     "LabBenchEvaluation",
     "LabBenchEvaluationConfig",
     "LiveBenchCodingEvaluation",

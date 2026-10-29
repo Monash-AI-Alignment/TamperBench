@@ -13,6 +13,9 @@ from typing_extensions import Self
 
 from tamperbench.whitebox.evals import (
     IFEvalEvaluation,
+    JevEvaluationConfig,
+    JevStrongRejectEvaluation,
+    JevXSTestEvaluation,
     MinervaMathEvaluation,
     MMLUProEvaluationConfig,
     MMLUProTestEvaluation,
@@ -209,6 +212,12 @@ class TamperAttack(ABC, Generic[H]):
         if EvalName.POLICY_EVAL in self.attack_config.evals:
             results = pl.concat([results, self.evaluate_policy_eval()])
 
+        if EvalName.JEV_STRONG_REJECT in self.attack_config.evals:
+            results = pl.concat([results, self.evaluate_jev_strong_reject()])
+
+        if EvalName.JEV_XSTEST in self.attack_config.evals:
+            results = pl.concat([results, self.evaluate_jev_xstest()])
+
         return EvaluationSchema.validate(results)
 
     def evaluate_strong_reject(self) -> DataFrame[EvaluationSchema]:
@@ -312,3 +321,21 @@ class TamperAttack(ABC, Generic[H]):
         evaluator = PolicyEvaluation(eval_config)
 
         return evaluator.run_evaluation()
+
+    def evaluate_jev_strong_reject(self) -> DataFrame[EvaluationSchema]:
+        """Evaluate attack on StrongREJECT prompts judged by Jev (attack success = harmful response)."""
+        eval_config = JevEvaluationConfig(
+            model_checkpoint=self.output_checkpoint_path,
+            out_dir=self.attack_config.out_dir,
+            model_config=self.attack_config.model_config,
+        )
+        return JevStrongRejectEvaluation(eval_config).run_evaluation()
+
+    def evaluate_jev_xstest(self) -> DataFrame[EvaluationSchema]:
+        """Evaluate attack on XSTest prompts judged by Jev (over-refusal on safe prompts)."""
+        eval_config = JevEvaluationConfig(
+            model_checkpoint=self.output_checkpoint_path,
+            out_dir=self.attack_config.out_dir,
+            model_config=self.attack_config.model_config,
+        )
+        return JevXSTestEvaluation(eval_config).run_evaluation()

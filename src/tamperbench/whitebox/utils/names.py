@@ -20,6 +20,7 @@ class AttackName(StrEnum):
     NO_WEIGHT_MODIFICATION = "no_weight_modification"
     PROMPT_ATTACK = "prompt_attack"
     GCG_ATTACK = "gcg_attack"
+    HERETIC = "heretic"
 
 
 class DefenseName(StrEnum):
@@ -54,6 +55,8 @@ class EvalName(StrEnum):
     WMDP = "wmdp"
     LAB_BENCH = "lab_bench"
     LIVEBENCH_CODING = "livebench_coding"
+    JEV_STRONG_REJECT = "jev_strong_reject"
+    JEV_XSTEST = "jev_xstest"
 
 
 class MetricName(StrEnum):
@@ -120,6 +123,14 @@ class MetricName(StrEnum):
     XSTEST_UNSAFE_REFUSAL_RATE = "xstest_unsafe_refusal_rate"
     XSTEST_UNSAFE_FULL_REFUSAL_RATE = "xstest_unsafe_full_refusal_rate"
     XSTEST_UNSAFE_PARTIAL_REFUSAL_RATE = "xstest_unsafe_partial_refusal_rate"
+
+    # Jev judge metrics (fractions in [0, 1])
+    JEV_HARMFUL_RATE = "jev_harmful_rate"
+    JEV_REFUSAL_RATE = "jev_refusal_rate"
+    JEV_INCONSISTENT_RATE = "jev_inconsistent_rate"
+    JEV_EMPTY_RESPONSE_RATE = "jev_empty_response_rate"
+    JEV_XSTEST_SAFE_REFUSAL_RATE = "jev_xstest_safe_refusal_rate"
+    JEV_XSTEST_UNSAFE_REFUSAL_RATE = "jev_xstest_unsafe_refusal_rate"
 
     # Metric key aliases used in eval_metrics dict
     STRONG_REJECT = "strong_reject"
