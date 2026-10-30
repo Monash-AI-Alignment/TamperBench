@@ -18,6 +18,7 @@ from pathlib import Path
 import torch
 from dotenv import load_dotenv
 from safetensors.torch import load_file
+from transformers import AutoConfig
 
 from tamperbench.whitebox.attacks.heretic.heretic import HereticAttack, HereticConfig
 from tamperbench.whitebox.evals.jev.jev import JevEvaluationConfig, JevStrongRejectEvaluation, JevXSTestEvaluation
@@ -86,6 +87,14 @@ if __name__ == "__main__":
         )
         print(f"max |search export - restore export| = {difference:.3g}")
         assert difference < 1e-2, "restore did not re-create the searched trial"
+        # Abliteration changes weights only: the export must load with the input's architecture config.
+        # (A transformers-5 config.json once made 4.x read Llama's RoPE base as 10,000 instead of 500,000.)
+        source_config = AutoConfig.from_pretrained(model).to_diff_dict()
+        export_config = AutoConfig.from_pretrained(searched.output_checkpoint_path).to_diff_dict()
+        for ignored in ("_name_or_path", "transformers_version"):
+            source_config.pop(ignored, None)
+            export_config.pop(ignored, None)
+        assert export_config == source_config, f"export config differs: {export_config} vs {source_config}"
 
         base = _jev_metrics(model, root / "base_eval", model_config)
         attacked = _jev_metrics(searched.output_checkpoint_path, root / "searched", model_config)

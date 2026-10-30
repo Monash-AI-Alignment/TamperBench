@@ -11,7 +11,7 @@ from optuna.storages.journal import JournalFileBackend
 from tokenizers import Tokenizer
 from tokenizers.models import WordLevel
 from tokenizers.pre_tokenizers import Whitespace
-from transformers import AutoTokenizer, PreTrainedTokenizerFast
+from transformers import AutoConfig, AutoTokenizer, LlamaConfig, PreTrainedTokenizerFast
 
 from tamperbench.whitebox.utils.heretic import (
     HereticRunError,
@@ -19,7 +19,7 @@ from tamperbench.whitebox.utils.heretic import (
     check_heretic_log,
     journal_path,
     pareto_candidates,
-    reserialize_tokenizer,
+    reserialize_input_metadata,
     run_heretic,
     study_is_finished,
     write_restore_journal,
@@ -170,8 +170,8 @@ def test_search_command_answers_every_prompt_and_forwards_empty_prefix(tmp_path:
     assert command[-2:] == ["--response-prefix", ""]
 
 
-def test_reserialize_tokenizer_repairs_a_transformers_5_export(tmp_path: Path) -> None:
-    """An export whose tokenizer config this transformers cannot load gets the input tokenizer back."""
+def test_reserialize_repairs_a_transformers_5_export(tmp_path: Path) -> None:
+    """A transformers-5 export (RoPE base misread, tokenizer unloadable) loads exactly like its input."""
     vocab = {"[UNK]": 0, "<eos>": 1, "hello": 2, "world": 3}
     backend = Tokenizer(WordLevel(vocab, unk_token="[UNK]"))
     backend.pre_tokenizer = Whitespace()
@@ -179,20 +179,32 @@ def test_reserialize_tokenizer_repairs_a_transformers_5_export(tmp_path: Path) -
     PreTrainedTokenizerFast(
         tokenizer_object=backend, unk_token="[UNK]", eos_token="<eos>", chat_template="{{ messages[0]['content'] }}"
     ).save_pretrained(str(source))
+    LlamaConfig(
+        vocab_size=4,
+        hidden_size=8,
+        intermediate_size=16,
+        num_hidden_layers=1,
+        num_attention_heads=2,
+        rope_theta=500000.0,
+    ).save_pretrained(str(source))
 
     export = tmp_path / "export"
     export.mkdir()
-    (export / "config.json").write_text("{}")
+    v5_config = json.loads((source / "config.json").read_text())
+    v5_config.pop("rope_theta")  # transformers 5.x moves it into rope_parameters
+    v5_config["rope_parameters"] = {"rope_theta": 500000.0, "rope_type": "default"}
+    (export / "config.json").write_text(json.dumps(v5_config))
     broken = json.loads((source / "tokenizer_config.json").read_text())
     broken["extra_special_tokens"] = ["<eos>"]  # transformers 5.x style, a list rather than a dict
     (export / "tokenizer_config.json").write_text(json.dumps(broken))
     (export / "tokenizer.json").write_text((source / "tokenizer.json").read_text())
+    assert AutoConfig.from_pretrained(str(export)).rope_theta == 10000.0  # silently wrong before the repair
     with pytest.raises(AttributeError):
         AutoTokenizer.from_pretrained(str(export))
 
-    reserialize_tokenizer(str(source), export)
+    reserialize_input_metadata(str(source), str(source), export)
 
+    assert AutoConfig.from_pretrained(str(export)).rope_theta == 500000.0
     repaired = AutoTokenizer.from_pretrained(str(export))
     assert repaired.get_vocab() == vocab
     assert repaired.chat_template == "{{ messages[0]['content'] }}"
-    assert (export / "config.json").read_text() == "{}"

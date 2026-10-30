@@ -33,7 +33,7 @@ import optuna
 from optuna.storages import JournalStorage
 from optuna.storages.journal import JournalFileBackend
 from optuna.trial import TrialState
-from transformers import AutoTokenizer
+from transformers import AutoConfig, AutoTokenizer, GenerationConfig
 
 HERETIC_COMMIT = "3521f8648a0dccf6e12a92666862632235fac7e6"
 HERETIC_BIN_ENV = "HERETIC_BIN"
@@ -48,7 +48,7 @@ class HereticRunError(RuntimeError):
     """Heretic failed, including failures it reports with exit code 0."""
 
 
-# Tokenizer files Heretic's environment writes into an export (transformers 5.x format).
+# Metadata files Heretic's environment writes into an export (transformers 5.x format).
 _TOKENIZER_FILES = (
     "tokenizer.json",
     "tokenizer_config.json",
@@ -60,23 +60,37 @@ _TOKENIZER_FILES = (
     "vocab.json",
     "merges.txt",
 )
+_MODEL_CONFIG_FILES = ("config.json", "generation_config.json")
 
 
-def reserialize_tokenizer(tokenizer_source: str, save_dir: Path) -> None:
-    """Replace the export's tokenizer files with `tokenizer_source`'s, saved by this environment.
+def reserialize_input_metadata(model_source: str, tokenizer_source: str, save_dir: Path) -> None:
+    """Replace the export's config and tokenizer files with the input checkpoint's, saved here.
 
-    Heretic runs on transformers 5.x, whose tokenizer config (for example a list-valued
-    `extra_special_tokens`) older transformers cannot load. Abliteration edits weights
-    only, so the attacked model's tokenizer is the input checkpoint's; re-saving it here
-    makes the export loadable by the same stack that evaluates it.
+    Heretic runs on transformers 5.x, which writes files older transformers misread:
+    `config.json` moves `rope_theta` into `rope_parameters`, so transformers 4.x and vLLM
+    silently fall back to the default RoPE base (10,000 instead of Llama-3's 500,000) and
+    the model degrades, worst on long prompts; and `tokenizer_config.json` gets a
+    list-valued `extra_special_tokens` that 4.x cannot load. Abliteration edits weight
+    values only, so the attacked model's architecture config, generation defaults and
+    tokenizer are the input checkpoint's; re-saving them with this environment makes the
+    export load exactly as the input does.
 
     Args:
-        tokenizer_source: The input checkpoint (or its tokenizer checkpoint), HF id or path.
+        model_source: The input checkpoint, HF id or path.
+        tokenizer_source: The input's tokenizer (the checkpoint itself unless overridden).
         save_dir: The Heretic export to fix in place.
     """
+    config = AutoConfig.from_pretrained(model_source)
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_source)
-    for name in _TOKENIZER_FILES:
+    try:
+        generation_config: GenerationConfig | None = GenerationConfig.from_pretrained(model_source)
+    except OSError:
+        generation_config = None
+    for name in (*_MODEL_CONFIG_FILES, *_TOKENIZER_FILES):
         (save_dir / name).unlink(missing_ok=True)
+    config.save_pretrained(str(save_dir))
+    if generation_config is not None:
+        generation_config.save_pretrained(str(save_dir))
     tokenizer.save_pretrained(str(save_dir))
 
 
