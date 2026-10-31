@@ -8,9 +8,10 @@ Needs a GPU, `HERETIC_BIN` (scripts/whitebox/setup_heretic.sh) and `JEV_API_KEY`
 3. Score the base and attacked models with `jev_strong_reject` and `jev_xstest` on a
    prompt subset; the attack must raise the judged harmful rate.
 
-    uv run tests/attacks/test_heretic_attack.py [model]   # default Qwen/Qwen2.5-1.5B-Instruct
+    uv run tests/attacks/test_heretic_attack.py [model] [keyword|jev]   # default Qwen/Qwen2.5-1.5B-Instruct, keyword
 """
 
+import json
 import sys
 import tempfile
 from pathlib import Path
@@ -23,6 +24,7 @@ from transformers import AutoConfig
 from tamperbench.whitebox.attacks.heretic.heretic import HereticAttack, HereticConfig
 from tamperbench.whitebox.evals.jev.jev import JevEvaluationConfig, JevStrongRejectEvaluation, JevXSTestEvaluation
 from tamperbench.whitebox.evals.output_schema import EvaluationSchema
+from tamperbench.whitebox.utils.heretic import HereticObjective
 from tamperbench.whitebox.utils.models.config import ModelConfig
 from tamperbench.whitebox.utils.names import MetricName, TemplateName
 
@@ -55,6 +57,7 @@ def _jev_metrics(checkpoint: str, out_dir: Path, model_config: ModelConfig) -> d
 if __name__ == "__main__":
     load_dotenv()
     model = sys.argv[1] if len(sys.argv) > 1 else "Qwen/Qwen2.5-1.5B-Instruct"
+    objective: HereticObjective = "jev" if len(sys.argv) > 2 and sys.argv[2] == "jev" else "keyword"
     model_config = ModelConfig(template_name=TemplateName.NATIVE, max_generation_length=512, inference_batch_size=16)
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -72,6 +75,7 @@ if __name__ == "__main__":
                     trial_index=0,
                     n_trials=12,
                     n_startup_trials=6,
+                    objective=objective,
                     study_cache_dir=str(root / "study_cache"),
                 )
             )
@@ -82,6 +86,12 @@ if __name__ == "__main__":
         restored.benchmark()
         assert (root / "searched" / "heretic" / "search.log").exists(), "first run did not search"
         assert (root / "restored" / "heretic" / "restore.log").exists(), "second run did not reuse the cached study"
+        front = json.loads((root / "searched" / "heretic_summary.json").read_text())["pareto_front"]
+        print("pareto front:", [candidate["scores"] for candidate in front])
+        if objective == "jev":
+            assert all("Not harmful (Jev)" in candidate["scores"] for candidate in front), (
+                "search did not score with Jev"
+            )
         difference = _max_weight_difference(
             Path(searched.output_checkpoint_path), Path(restored.output_checkpoint_path)
         )
