@@ -149,6 +149,9 @@ exclude = [
   "scripts",
   ".cache",
 
+  # Runs inside Heretic's own environment, where `heretic` is importable
+  "src/tamperbench/whitebox/attacks/heretic/jev_scorer_plugin.py",
+
   # Files whose implementation was mostly sourced from external codebases
   "src/tamperbench/whitebox/evals/embedding_attack/softopt.py",
   "src/tamperbench/whitebox/evals/ifeval/instructions.py",

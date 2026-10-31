@@ -10,6 +10,7 @@ from tamperbench.whitebox.attacks.base import TamperAttack, TamperAttackConfig
 from tamperbench.whitebox.attacks.registry import register_attack
 from tamperbench.whitebox.utils.heretic import (
     HERETIC_COMMIT,
+    HereticObjective,
     HereticRunError,
     HereticSearch,
     journal_path,
@@ -37,10 +38,15 @@ class HereticConfig(TamperAttackConfig):
 
     Attributes:
         trial_index: Position on Heretic's sorted Pareto front to export. 0 is the
-            fewest keyword refusals, tie-broken by lowest KL.
+            best value of `objective`, tie-broken by lowest KL.
         n_trials: Total Optuna trials in Heretic's search.
         n_startup_trials: Random trials before TPE.
         response_prefix: Forced response prefix; None lets Heretic detect it.
+        objective: "keyword" searches on Heretic's refusal-keyword rate; "jev" on the
+            share of responses Jev does not judge harmful (needs `JEV_API_KEY` and
+            about 100 Jev calls per trial).
+        max_response_length: Tokens Heretic generates per scored response; None keeps
+            its default (100).
         heretic_bin: Path to the `heretic` executable; None reads `$HERETIC_BIN`.
         study_cache_dir: Root of the cached Heretic studies.
     """
@@ -49,6 +55,8 @@ class HereticConfig(TamperAttackConfig):
     n_trials: int = 200
     n_startup_trials: int = 60
     response_prefix: str | None = None
+    objective: HereticObjective = "keyword"
+    max_response_length: int | None = None
     heretic_bin: str | None = None
     study_cache_dir: str = field(default_factory=lambda: str(Path.home() / ".cache" / "tamperbench" / "heretic"))
 
@@ -77,6 +85,8 @@ class HereticAttack(TamperAttack[HereticConfig]):
             n_trials=config.n_trials,
             n_startup_trials=config.n_startup_trials,
             response_prefix=config.response_prefix,
+            objective=config.objective,
+            max_response_length=config.max_response_length,
         )
         study_dir = Path(config.study_cache_dir).expanduser() / search.cache_key(heretic_bin)
         work_dir = Path(config.out_dir) / "heretic"

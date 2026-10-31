@@ -27,7 +27,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import optuna
 from optuna.storages import JournalStorage
@@ -37,6 +37,14 @@ from transformers import AutoConfig, AutoTokenizer, GenerationConfig
 
 HERETIC_COMMIT = "3521f8648a0dccf6e12a92666862632235fac7e6"
 HERETIC_BIN_ENV = "HERETIC_BIN"
+
+HereticObjective = Literal["keyword", "jev"]
+JEV_SCORER_PLUGIN = Path(__file__).resolve().parents[1] / "attacks" / "heretic" / "jev_scorer_plugin.py"
+JEV_SCORERS = [
+    {"plugin": f"{JEV_SCORER_PLUGIN}:JevHarmfulRate", "optimization": "minimize"},
+    {"plugin": "heretic.scorers.keyword_rate.KeywordRate", "optimization": "none"},
+    {"plugin": "heretic.scorers.kl_divergence.KLDivergence", "optimization": "minimize"},
+]
 
 _LOG_FAILURES = (
     re.compile(r"Configuration contains \d+ errors?"),
@@ -141,6 +149,11 @@ class HereticSearch:
         n_trials: Total Optuna trials.
         n_startup_trials: Random trials before TPE starts.
         response_prefix: Forced response prefix; None lets Heretic detect it.
+        objective: What the search minimises alongside KL. "keyword" is Heretic's
+            refusal-keyword rate; "jev" is the share of responses Jev does not judge
+            harmful (keyword refusals are still recorded, not optimised).
+        max_response_length: Tokens generated per scored response; None keeps
+            Heretic's default (100).
     """
 
     model: str
@@ -148,6 +161,8 @@ class HereticSearch:
     n_trials: int
     n_startup_trials: int
     response_prefix: str | None = None
+    objective: HereticObjective = "keyword"
+    max_response_length: int | None = None
 
     def cache_key(self, heretic_bin: Path) -> str:
         """Stable key for the study cache; the chosen trial index is deliberately excluded."""
@@ -158,6 +173,8 @@ class HereticSearch:
             "n_trials": self.n_trials,
             "n_startup_trials": self.n_startup_trials,
             "response_prefix": self.response_prefix,
+            "objective": self.objective,
+            "max_response_length": self.max_response_length,
         }
         return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:16]
 
@@ -188,6 +205,10 @@ class HereticSearch:
         ]
         if self.response_prefix is not None:
             command += ["--response-prefix", self.response_prefix]
+        if self.max_response_length is not None:
+            command += ["--max-response-length", str(self.max_response_length)]
+        if self.objective == "jev":
+            command += ["--scorers", json.dumps(JEV_SCORERS)]
         return command
 
 
@@ -230,29 +251,37 @@ class HereticCandidate:
     Attributes:
         position: 0-based position in Heretic's sorted Pareto front (`--trial-index`).
         trial_number: Optuna's 0-based trial number.
-        objectives: Objective name to value, in Heretic's scorer order (defaults:
-            "Refusals" as a fraction, then "KL divergence").
+        scores: Every scorer's value by name, in Heretic's scorer order, including
+            scorers recorded but not optimised (defaults: "Refusals" as a fraction,
+            then "KL divergence").
     """
 
     position: int
     trial_number: int
-    objectives: dict[str, float]
+    scores: dict[str, float]
 
 
 def pareto_candidates(journal: Path) -> list[HereticCandidate]:
     """Heretic's Pareto front in `--trial-index` order.
 
-    Heretic sorts `study.best_trials` ascending by the tuple of objective values in
-    scorer order (by default fewest keyword refusals first, then lowest KL).
+    Heretic sorts `study.best_trials` ascending by the tuple of optimised scores in
+    scorer order (by default fewest keyword refusals first, then lowest KL); scorers
+    with `optimization = "none"` do not take part.
     """
     study = _load_study(journal)
+    scorers = json.loads(study.user_attrs["settings"])["scorers"]
+    optimised = [scorer["optimization"] != "none" for scorer in scorers]
     complete = [t for t in study.best_trials if t.state == TrialState.COMPLETE]
 
-    def objectives(trial: optuna.trial.FrozenTrial) -> dict[str, float]:
+    def scores(trial: optuna.trial.FrozenTrial) -> dict[str, float]:
         return {entry["name"]: float(entry["score"]["value"]) for entry in trial.user_attrs["scores"]}
 
-    ordered = sorted(complete, key=lambda t: tuple(objectives(t).values()))
-    return [HereticCandidate(i, t.number, objectives(t)) for i, t in enumerate(ordered)]
+    def sort_key(trial: optuna.trial.FrozenTrial) -> tuple[float, ...]:
+        values = scores(trial).values()
+        return tuple(value for value, used in zip(values, optimised, strict=True) if used)
+
+    ordered = sorted(complete, key=sort_key)
+    return [HereticCandidate(i, t.number, scores(t)) for i, t in enumerate(ordered)]
 
 
 def write_restore_journal(journal: Path, restore_dir: Path, model: str, trial_index: int, save_directory: Path) -> Path:

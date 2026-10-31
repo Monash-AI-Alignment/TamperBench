@@ -25,6 +25,9 @@ git -C "$SRC" checkout -q "$HERETIC_COMMIT"
 
 # Heretic's own lockfile, into a dedicated environment (never tamperbench's).
 (cd "$SRC" && UV_PROJECT_ENVIRONMENT="$VENV" uv sync --frozen)
+# The Jev scorer plugin (`objective: jev`) calls the judge from inside Heretic's process.
+# `uv sync` removes it again, so it is reinstalled on every run.
+uv pip install --quiet --python "$VENV/bin/python" "typesafe-sdk>=0.7.1,<0.8"
 
-"$VENV/bin/python" -c "import heretic, torch, transformers; print('heretic ok; torch', torch.__version__, 'cuda', torch.cuda.is_available(), 'transformers', transformers.__version__)"
+"$VENV/bin/python" -c "import heretic, torch, transformers, typesafe_sdk; print('heretic ok; torch', torch.__version__, 'cuda', torch.cuda.is_available(), 'transformers', transformers.__version__)"
 echo "export HERETIC_BIN=$VENV/bin/heretic"

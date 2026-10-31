@@ -14,6 +14,7 @@ from tokenizers.pre_tokenizers import Whitespace
 from transformers import AutoConfig, AutoTokenizer, LlamaConfig, PreTrainedTokenizerFast
 
 from tamperbench.whitebox.utils.heretic import (
+    JEV_SCORER_PLUGIN,
     HereticRunError,
     HereticSearch,
     check_heretic_log,
@@ -28,26 +29,54 @@ from tamperbench.whitebox.utils.heretic import (
 MODEL = "org/Model-1B-Instruct"
 
 
-def _scores(refusals: float, kl: float) -> list[dict[str, object]]:
+KEYWORD_SCORERS = [
+    {"plugin": "heretic.scorers.keyword_rate.KeywordRate", "optimization": "minimize"},
+    {"plugin": "heretic.scorers.kl_divergence.KLDivergence", "optimization": "minimize"},
+]
+
+
+def _scores(named: dict[str, float]) -> list[dict[str, object]]:
     return [
-        {"name": "Refusals", "score": {"value": refusals, "rich_display": "", "md_display": ""}},
-        {"name": "KL divergence", "score": {"value": kl, "rich_display": "", "md_display": ""}},
+        {"name": name, "score": {"value": value, "rich_display": "", "md_display": ""}} for name, value in named.items()
     ]
 
 
-def _write_study(study_dir: Path, trials: list[tuple[float, float]], finished: bool = True) -> Path:
-    """Write a journal shaped like Heretic's: settings and finished as study attrs, scores per trial."""
+def _write_study(
+    study_dir: Path,
+    trials: list[tuple[float, float]],
+    finished: bool = True,
+    recorded: list[float] | None = None,
+) -> Path:
+    """Write a journal shaped like Heretic's: settings and finished as study attrs, scores per trial.
+
+    With `recorded`, each trial also carries a non-optimised "Refusals" score (as with the
+    Jev objective) and the optimised pair is ("Not harmful (Jev)", "KL divergence").
+    """
     journal = journal_path(study_dir, MODEL)
     journal.parent.mkdir(parents=True, exist_ok=True)
     storage = JournalStorage(JournalFileBackend(str(journal)))
     study = optuna.create_study(study_name="heretic", storage=storage, directions=["minimize", "minimize"])
-    settings = {"model": MODEL, "trial_index": 0, "model_action": "save", "export_strategy": "merge", "seed": 7}
+    scorers = (
+        KEYWORD_SCORERS if recorded is None else [KEYWORD_SCORERS[0] | {"optimization": "none"}, *KEYWORD_SCORERS[1:]]
+    )
+    if recorded is not None:
+        scorers = [{"plugin": f"{JEV_SCORER_PLUGIN}:JevHarmfulRate", "optimization": "minimize"}, *scorers]
+    settings = {
+        "model": MODEL,
+        "trial_index": 0,
+        "model_action": "save",
+        "export_strategy": "merge",
+        "seed": 7,
+        "scorers": scorers,
+    }
     study.set_user_attr("settings", json.dumps(settings))
-    for i, (refusals, kl) in enumerate(trials):
+    for i, (objective, kl) in enumerate(trials):
+        if recorded is None:
+            named = {"Refusals": objective, "KL divergence": kl}
+        else:
+            named = {"Not harmful (Jev)": objective, "Refusals": recorded[i], "KL divergence": kl}
         study.add_trial(
-            optuna.trial.create_trial(
-                values=[refusals, kl], user_attrs={"index": i + 1, "scores": _scores(refusals, kl)}
-            )
+            optuna.trial.create_trial(values=[objective, kl], user_attrs={"index": i + 1, "scores": _scores(named)})
         )
     study.set_user_attr("finished", finished)
     return journal
@@ -59,7 +88,15 @@ def test_pareto_order_matches_trial_index_semantics(tmp_path: Path) -> None:
     front = pareto_candidates(journal)
     assert [c.trial_number for c in front] == [1, 0, 3]
     assert [c.position for c in front] == [0, 1, 2]
-    assert front[0].objectives == {"Refusals": 0.04, "KL divergence": 0.05}
+    assert front[0].scores == {"Refusals": 0.04, "KL divergence": 0.05}
+
+
+def test_pareto_order_ignores_recorded_but_unoptimised_scores(tmp_path: Path) -> None:
+    """Under the Jev objective, keyword refusals are recorded but must not reorder the front."""
+    journal = _write_study(tmp_path, [(0.30, 0.01), (0.10, 0.05), (0.60, 0.002)], recorded=[0.02, 0.90, 0.01])
+    front = pareto_candidates(journal)
+    assert [c.trial_number for c in front] == [1, 0, 2]
+    assert front[0].scores["Refusals"] == 0.90
 
 
 def test_unfinished_or_missing_study_is_not_reused(tmp_path: Path) -> None:
@@ -153,6 +190,8 @@ def test_cache_key_tracks_checkpoint_content_and_search_settings(tmp_path: Path)
     key = search.cache_key(heretic_bin)
     assert key == HereticSearch(model=str(checkpoint), seed=1, n_trials=200, n_startup_trials=60).cache_key(heretic_bin)
     assert key != HereticSearch(model=str(checkpoint), seed=2, n_trials=200, n_startup_trials=60).cache_key(heretic_bin)
+    jev = HereticSearch(model=str(checkpoint), seed=1, n_trials=200, n_startup_trials=60, objective="jev")
+    assert key != jev.cache_key(heretic_bin)
     (checkpoint / "model.safetensors").write_bytes(b"rewritten weights")
     assert search.cache_key(heretic_bin) != key
 
@@ -168,6 +207,21 @@ def test_search_command_answers_every_prompt_and_forwards_empty_prefix(tmp_path:
     assert flags["--export-strategy"] == "merge"
     assert flags["--save-directory"] == str(tmp_path / "out")
     assert command[-2:] == ["--response-prefix", ""]
+
+
+def test_jev_objective_optimises_jev_and_only_records_keywords(tmp_path: Path) -> None:
+    """The Jev search minimises Jev's not-harmful rate and KL; keyword refusals are not an objective."""
+    search = HereticSearch(
+        model=MODEL, seed=1, n_trials=10, n_startup_trials=3, objective="jev", max_response_length=256
+    )
+    command = search.search_command(Path("/h"), tmp_path / "s", 0, tmp_path / "out")
+    flags = dict(zip(command[1::2], command[2::2], strict=False))
+    assert flags["--max-response-length"] == "256"
+    scorers = json.loads(flags["--scorers"])
+    assert [s["optimization"] for s in scorers] == ["minimize", "none", "minimize"]
+    plugin_file, plugin_class = scorers[0]["plugin"].rsplit(":", 1)
+    assert Path(plugin_file).is_file() and plugin_class == "JevHarmfulRate"
+    assert "--scorers" not in HereticSearch(MODEL, 1, 10, 3).search_command(Path("/h"), tmp_path, 0, tmp_path)
 
 
 def test_reserialize_repairs_a_transformers_5_export(tmp_path: Path) -> None:

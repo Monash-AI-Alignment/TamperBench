@@ -147,6 +147,13 @@ choose the attacked model by the judged evals rather than Heretic's keyword coun
 Heretic exits 0 on configuration and save errors; the attack checks the logs and the saved
 checkpoint and raises `HereticRunError` instead.
 
+`objective: jev` replaces Heretic's keyword count with the Jev judge: each trial minimises the share
+of responses to Heretic's 100 harmful prompts that Jev does not judge harmful, alongside KL. Keyword
+refusals are still recorded in every trial. Use it on defenses whose refusals keywords miss (covert
+deflection, or degenerate output that contains no refusal phrase). It costs about 100 Jev calls per
+trial and needs `JEV_API_KEY` in Heretic's process environment. Set `max_response_length` (Heretic's
+default is 100 tokens) so harm can be judged from the response; `grid_jev.yaml` uses 256.
+
 ### Jev-judged evaluations (`jev_strong_reject`, `jev_xstest`)
 
 Score generations with the Jev judge (TypeSafe System One), using the judge prompts of
