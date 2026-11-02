@@ -30,6 +30,10 @@ class MomentGuardConfig(AlignmentDefenseConfig):
             in which degrees >= 2 are matched; 0 uses the full space.
         bank_size: Earlier activations kept per class, layer and position to widen the
             moment estimates; 0 uses the current batch only.
+        whiten_shrinkage: If > 0, the degree-1 term is the mean gap under the shrunk
+            inverse within-class covariance (see `moments.whitened_mean_gap`), which also
+            closes gaps along low-variance directions that linear probes exploit; 0 uses
+            the Euclidean gap.
         num_positions: Post-instruction tokens matched; None uses every token the chat
             template appends after the user message.
         kl_weight: Weight of the KL term.
@@ -53,6 +57,7 @@ class MomentGuardConfig(AlignmentDefenseConfig):
     moment_weight: float = 1.0
     subspace_rank: int = 64
     bank_size: int = 256
+    whiten_shrinkage: float = 0.0
     num_positions: int | None = None
     kl_weight: float = 1.0
     calibration_samples: int = 256

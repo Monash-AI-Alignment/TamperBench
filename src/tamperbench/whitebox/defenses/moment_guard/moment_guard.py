@@ -163,6 +163,7 @@ def train(
                     bases,
                     None if bank is None else bank.harmful,
                     None if bank is None else bank.harmless,
+                    whiten_shrinkage=config.whiten_shrinkage,
                 )
 
             loss = refusal_ce + config.kl_weight * kl

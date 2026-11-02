@@ -8,7 +8,12 @@ from tokenizers.pre_tokenizers import Whitespace
 from transformers import PreTrainedTokenizerFast
 
 from tamperbench.whitebox.defenses.moment_guard.activations import collate, encode, post_instruction_length
-from tamperbench.whitebox.defenses.moment_guard.moments import MomentBank, moment_penalty, polynomial_mmd2
+from tamperbench.whitebox.defenses.moment_guard.moments import (
+    MomentBank,
+    moment_penalty,
+    polynomial_mmd2,
+    whitened_mean_gap,
+)
 
 
 def _tensor_power(x: torch.Tensor, degree: int) -> torch.Tensor:
@@ -72,10 +77,38 @@ def test_m_selects_which_moments_must_match() -> None:
     harmful = (3.0 * signs[:, None] * r + noise[0]).view(1, 1, n, d)
     harmless = noise[1].view(1, 1, n, d)
     first, _ = moment_penalty(harmful, harmless, m=2)
+    whitened, _ = moment_penalty(harmful, harmless, m=2, whiten_shrinkage=0.5)
+    assert whitened.abs() < 0.2
     second, parts = moment_penalty(harmful, harmless, m=3)
     assert first.abs() < 0.2
     assert parts[2] > 50 * first.abs().clamp_min(1e-3)
     torch.testing.assert_close(second, parts[1] + parts[2])
+
+
+def test_whitened_gap_matches_the_explicit_inverse_and_weights_low_variance_gaps() -> None:
+    """Woodbury result equals the explicit formula; a gap where classes barely vary costs more.
+
+    This is the residual gap that kept linear probes at ~1.0 in the Euclidean-penalty smoke runs.
+    """
+    generator = torch.Generator().manual_seed(3)
+    n, d, shrinkage = 300, 5, 0.1
+    spread = torch.tensor([3.0, 1.0, 1.0, 1.0, 0.05], dtype=torch.float64)
+    base_x = torch.randn(n, d, generator=generator, dtype=torch.float64) * spread
+    base_y = torch.randn(n, d, generator=generator, dtype=torch.float64) * spread
+
+    centred = torch.cat([base_x - base_x.mean(0), base_y - base_y.mean(0)])
+    sigma = centred.T @ centred / (2 * n)
+    tau = torch.trace(sigma) / d
+    gap = base_x.mean(0) - base_y.mean(0)
+    explicit = tau * gap @ torch.linalg.solve((1 - shrinkage) * sigma + shrinkage * tau * torch.eye(d), gap)
+    torch.testing.assert_close(whitened_mean_gap(base_x, base_y, shrinkage), explicit)
+
+    def shifted(axis: int) -> torch.Tensor:
+        shift = torch.zeros(d, dtype=torch.float64)
+        shift[axis] = 0.2
+        return whitened_mean_gap(base_x + shift, base_y, shrinkage)
+
+    assert shifted(4) > 5 * shifted(0)
 
 
 def test_bank_samples_enter_the_estimate_but_receive_no_gradient() -> None:

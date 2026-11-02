@@ -62,6 +62,46 @@ def polynomial_mmd2(
     return xx + yy - 2 * k_xy.mean()
 
 
+def whitened_mean_gap(
+    x: torch.Tensor,
+    y: torch.Tensor,
+    shrinkage: float,
+    x_extra: torch.Tensor | None = None,
+    y_extra: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """Squared mean difference under the shrunk inverse within-class covariance, times its mean variance.
+
+    tau * dmu^T Sigma_reg^{-1} dmu with Sigma_reg = (1 - shrinkage) Sigma_within + shrinkage tau I
+    and tau = tr(Sigma_within) / d. For isotropic Sigma it equals the Euclidean ||dmu||^2,
+    but a mean gap along a direction the classes barely vary in costs up to 1/shrinkage
+    times more: that is the gap a linear probe exploits even when ||dmu|| is tiny. The
+    covariance is detached; the gradient flows through the means. The inverse uses the
+    Woodbury identity, so no d x d matrix is formed.
+
+    Args:
+        x: Samples of the first class, shape (n, d).
+        y: Samples of the second class, shape (m, d).
+        shrinkage: Weight of the isotropic part, in (0, 1].
+        x_extra: Earlier detached samples of the first class.
+        y_extra: Earlier detached samples of the second class.
+    """
+    if not 0 < shrinkage <= 1:
+        raise ValueError(f"shrinkage must be in (0, 1], got {shrinkage}")
+    if x_extra is not None:
+        x = torch.cat([x, x_extra.detach()])
+    if y_extra is not None:
+        y = torch.cat([y, y_extra.detach()])
+    gap = x.mean(0) - y.mean(0)
+    centred = torch.cat([x - x.mean(0), y - y.mean(0)]).detach()
+    n, d = centred.shape
+    tau = centred.square().sum() / (n * d)
+    c = shrinkage * tau
+    b = centred * ((1 - shrinkage) / n) ** 0.5
+    inner = c * torch.eye(n, device=b.device, dtype=b.dtype) + b @ b.T
+    solved = (gap - b.T @ torch.linalg.solve(inner, b @ gap)) / c
+    return tau * (gap @ solved)
+
+
 def moment_penalty(
     harmful: torch.Tensor,
     harmless: torch.Tensor,
@@ -69,6 +109,7 @@ def moment_penalty(
     bases: torch.Tensor | None = None,
     harmful_extra: torch.Tensor | None = None,
     harmless_extra: torch.Tensor | None = None,
+    whiten_shrinkage: float = 0.0,
 ) -> tuple[torch.Tensor, dict[int, torch.Tensor]]:
     """D_m for training: plug-in estimates summed over layers, averaged over token positions.
 
@@ -84,6 +125,8 @@ def moment_penalty(
         bases: Orthonormal columns per layer for degrees >= 2, shape (layers, d, k).
         harmful_extra: Detached earlier harmful activations, shape (layers, positions, q, d).
         harmless_extra: Detached earlier harmless activations, shape (layers, positions, q', d).
+        whiten_shrinkage: If > 0, degree 1 uses `whitened_mean_gap` with this shrinkage
+            instead of the Euclidean mean gap.
 
     Returns:
         The penalty and its per-degree parts (each summed over layers, averaged over positions).
@@ -97,14 +140,15 @@ def moment_penalty(
         for layer in range(layers):
             basis = None if degree == 1 or bases is None else bases[layer]
             for position in range(positions):
-                total = total + polynomial_mmd2(
-                    _select(harmful, layer, position, basis),
-                    _select(harmless, layer, position, basis),
-                    degree,
-                    None if harmful_extra is None else _select(harmful_extra, layer, position, basis),
-                    None if harmless_extra is None else _select(harmless_extra, layer, position, basis),
-                    unbiased=False,
-                )
+                harmful_now = _select(harmful, layer, position, basis)
+                harmless_now = _select(harmless, layer, position, basis)
+                harmful_old = None if harmful_extra is None else _select(harmful_extra, layer, position, basis)
+                harmless_old = None if harmless_extra is None else _select(harmless_extra, layer, position, basis)
+                if degree == 1 and whiten_shrinkage > 0:
+                    term = whitened_mean_gap(harmful_now, harmless_now, whiten_shrinkage, harmful_old, harmless_old)
+                else:
+                    term = polynomial_mmd2(harmful_now, harmless_now, degree, harmful_old, harmless_old, unbiased=False)
+                total = total + term
         parts[degree] = total / positions
     return sum(parts.values(), harmful.new_zeros(())), parts
 
