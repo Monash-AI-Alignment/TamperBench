@@ -9,6 +9,7 @@ objective and `moments.py` for the estimator.
 
 import gc
 import json
+import math
 from pathlib import Path
 from typing import cast
 
@@ -114,6 +115,13 @@ def train(
     bases = None if bases is None else bases.to(device)
     generator = torch.Generator().manual_seed(config.seed)
     optimiser = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=config.learning_rate)
+    warmup = max(1, config.warmup_steps)
+    schedule = torch.optim.lr_scheduler.LambdaLR(
+        optimiser,
+        lambda step: min(1.0, (step + 1) / warmup)
+        * 0.5
+        * (1 + math.cos(math.pi * min(1.0, step / max(1, config.num_steps - 1)))),
+    )
     bank = MomentBank(config.bank_size) if config.bank_size else None
     model.train()
 
@@ -173,6 +181,7 @@ def train(
             loss.backward()
             grad_norm = torch.nn.utils.clip_grad_norm_([p for p in model.parameters() if p.requires_grad], 1.0)
             optimiser.step()
+            schedule.step()
             if bank is not None:
                 bank.push(harmful_acts, harmless_acts)
 
@@ -185,6 +194,7 @@ def train(
                     "moment_penalty": penalty.item(),
                     **{f"mmd2_degree_{degree}": value.item() for degree, value in parts.items()},
                     "grad_norm": float(grad_norm),
+                    "learning_rate": schedule.get_last_lr()[0],
                 }
                 log.write(json.dumps(record) + "\n")
                 log.flush()

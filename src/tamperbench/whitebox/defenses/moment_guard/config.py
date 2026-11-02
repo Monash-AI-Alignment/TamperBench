@@ -42,7 +42,8 @@ class MomentGuardConfig(AlignmentDefenseConfig):
         lora_alpha: LoRA alpha.
         lora_dropout: LoRA dropout.
         lora_target_modules: Modules given LoRA adapters.
-        learning_rate: AdamW learning rate.
+        learning_rate: Peak AdamW learning rate (linear warmup, then cosine decay to 0).
+        warmup_steps: Steps of linear learning-rate warmup.
         batch_size: Conversations per class per step.
         num_steps: Optimiser steps.
         max_length: Maximum tokens per conversation (prompts longer than this are dropped).
@@ -66,6 +67,7 @@ class MomentGuardConfig(AlignmentDefenseConfig):
     lora_dropout: float = 0.05
     lora_target_modules: tuple[str, ...] = ("q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj")
     learning_rate: float = 1e-4
+    warmup_steps: int = 50
     batch_size: int = 8
     num_steps: int = 1000
     max_length: int = 512
