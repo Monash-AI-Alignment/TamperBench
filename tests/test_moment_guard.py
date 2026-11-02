@@ -20,8 +20,8 @@ def _tensor_power(x: torch.Tensor, degree: int) -> torch.Tensor:
 
 
 @pytest.mark.parametrize("degree", [1, 2, 3])
-def test_estimator_equals_explicit_moment_tensor_formula(degree: int) -> None:
-    """The kernel trick reproduces the unbiased estimate built from explicit moment tensors."""
+def test_estimators_equal_explicit_moment_tensor_formulas(degree: int) -> None:
+    """The kernel trick reproduces both estimates built from explicit moment tensors."""
     generator = torch.Generator().manual_seed(degree)
     x = torch.randn(6, 3, generator=generator, dtype=torch.float64)
     y = torch.randn(5, 3, generator=generator, dtype=torch.float64) + 0.5
@@ -30,23 +30,35 @@ def test_estimator_equals_explicit_moment_tensor_formula(degree: int) -> None:
     xx = (sx @ sx - (tx * tx).sum()) / (6 * 5)
     yy = (sy @ sy - (ty * ty).sum()) / (5 * 4)
     xy = (sx @ sy) / (6 * 5)
-    torch.testing.assert_close(polynomial_mmd2(x, y, degree), xx + yy - 2 * xy)
+    torch.testing.assert_close(polynomial_mmd2(x, y, degree, unbiased=True), xx + yy - 2 * xy)
+    torch.testing.assert_close(polynomial_mmd2(x, y, degree, unbiased=False), (sx / 6 - sy / 5).square().sum())
 
 
-def test_estimator_is_not_inflated_by_within_class_spread() -> None:
-    """Equal means, wide spread: the plug-in estimate is about tr(Sigma)/n, the unbiased one about 0.
+def test_unbiased_estimate_ignores_spread_but_training_penalty_stays_bounded() -> None:
+    """Unbiased: ~0 for equal means however wide the spread. Training penalty: never below 0.
 
-    A plug-in penalty would push the model to shrink each class instead of matching them.
+    Spreading a class (x1 = -x2, large norm) drives the unbiased estimate to minus
+    infinity, which a model being trained will find (the first lambda = 10 smoke runs did).
     """
     generator = torch.Generator().manual_seed(0)
-    unbiased, plug_in = [], []
-    for _ in range(300):
-        x = 3.0 * torch.randn(16, 8, generator=generator, dtype=torch.float64)
-        y = torch.randn(16, 8, generator=generator, dtype=torch.float64)
-        unbiased.append(polynomial_mmd2(x, y, 1))
-        plug_in.append((x.mean(0) - y.mean(0)).square().sum())
-    assert torch.stack(plug_in).mean() > 4.0  # (9 + 1) * 8 / 16 = 5
+    unbiased = [
+        polynomial_mmd2(
+            3.0 * torch.randn(16, 8, generator=generator, dtype=torch.float64),
+            torch.randn(16, 8, generator=generator, dtype=torch.float64),
+            1,
+            unbiased=True,
+        )
+        for _ in range(300)
+    ]
     assert torch.stack(unbiased).mean().abs() < 0.3
+
+    direction = torch.zeros(4, dtype=torch.float64)
+    direction[0] = 1e3
+    spread = torch.stack([direction, -direction])
+    harmless = torch.randn(2, 4, generator=generator, dtype=torch.float64)
+    assert polynomial_mmd2(spread, harmless, 1, unbiased=True) < -1e5
+    penalty, _ = moment_penalty(spread.view(1, 1, 2, 4), harmless.view(1, 1, 2, 4), m=3)
+    assert penalty >= 0
 
 
 def test_m_selects_which_moments_must_match() -> None:
@@ -73,8 +85,8 @@ def test_bank_samples_enter_the_estimate_but_receive_no_gradient() -> None:
     y = torch.randn(4, 3, generator=generator)
     x_old = torch.randn(8, 3, generator=generator, requires_grad=True)
     y_old = torch.randn(8, 3, generator=generator)
-    value = polynomial_mmd2(x, y, 2, x_old, y_old)
-    torch.testing.assert_close(value, polynomial_mmd2(torch.cat([x, x_old]), torch.cat([y, y_old]), 2))
+    value = polynomial_mmd2(x, y, 2, x_old, y_old, unbiased=False)
+    torch.testing.assert_close(value, polynomial_mmd2(torch.cat([x, x_old]), torch.cat([y, y_old]), 2, unbiased=False))
     value.backward()
     assert x.grad is not None and x_old.grad is None
 

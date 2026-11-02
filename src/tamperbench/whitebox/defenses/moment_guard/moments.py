@@ -5,10 +5,17 @@ j-th uncentered moment tensors E[x^{(x)j}] of the two distributions, so summing 
 1..m-1 is zero exactly when the first m-1 moments match. Every term is a Gram matrix of
 dot products; the moment tensors are never formed.
 
-The estimator is the unbiased one (diagonal of the within-class Gram matrices
-excluded). The plug-in estimator, which keeps the diagonal, is biased upwards by the
-within-class spread (for j = 1 by tr(Sigma_x)/n + tr(Sigma_y)/m), so minimising it also
-collapses each class towards a point instead of only matching the classes.
+Two estimators, for two jobs:
+
+- Unbiased (diagonal of the within-class Gram matrices excluded): for measurement. Its
+  expectation is the true MMD^2, but it is not bounded below, so as a training loss a
+  model can drive it to minus infinity by spreading each class (x_1 = -x_2 with large
+  norm makes the within-class term arbitrarily negative). This happened in the first
+  Qwen smoke runs at lambda = 10.
+- Plug-in (diagonal kept): for training. It is exactly the squared distance between the
+  empirical moment tensors, so it is never negative. It is biased upwards by the
+  within-class spread (for j = 1 by tr(Sigma_x)/n + tr(Sigma_y)/m), which gives a weak
+  pull towards shrinking each class; the activation bank keeps n large to make it small.
 """
 
 import torch
@@ -20,8 +27,10 @@ def polynomial_mmd2(
     degree: int,
     x_extra: torch.Tensor | None = None,
     y_extra: torch.Tensor | None = None,
+    *,
+    unbiased: bool,
 ) -> torch.Tensor:
-    """Unbiased MMD^2 between samples `x` and `y` under k(a, b) = (a^T b)^degree.
+    """MMD^2 between samples `x` and `y` under k(a, b) = (a^T b)^degree.
 
     Args:
         x: Samples of the first distribution, shape (n, d).
@@ -29,9 +38,10 @@ def polynomial_mmd2(
         degree: Kernel degree j >= 1; the estimate targets ||E[x^{(x)j}] - E[y^{(x)j}]||_F^2.
         x_extra: Earlier samples of the first distribution, pooled with `x` but detached.
         y_extra: Earlier samples of the second distribution, pooled with `y` but detached.
+        unbiased: Exclude within-class self-pairs (measurement) or keep them (training loss).
 
     Returns:
-        Scalar estimate (may be slightly negative, as unbiased estimates can be).
+        Scalar estimate. The unbiased one may be negative; the plug-in one never is.
     """
     if degree < 1:
         raise ValueError(f"degree must be >= 1, got {degree}")
@@ -45,6 +55,8 @@ def polynomial_mmd2(
     k_xx = (x @ x.T) ** degree
     k_yy = (y @ y.T) ** degree
     k_xy = (x @ y.T) ** degree
+    if not unbiased:
+        return k_xx.mean() + k_yy.mean() - 2 * k_xy.mean()
     xx = (k_xx.sum() - k_xx.diagonal().sum()) / (n * (n - 1))
     yy = (k_yy.sum() - k_yy.diagonal().sum()) / (m * (m - 1))
     return xx + yy - 2 * k_xy.mean()
@@ -58,11 +70,12 @@ def moment_penalty(
     harmful_extra: torch.Tensor | None = None,
     harmless_extra: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, dict[int, torch.Tensor]]:
-    """D_m summed over layers, averaged over token positions.
+    """D_m for training: plug-in estimates summed over layers, averaged over token positions.
 
     D_m = sum_{j=1}^{m-1} MMD^2_{k_j}. Degree 1 (the class means, which difference-in-means
     abliteration reads) uses the full space; degrees >= 2 use the per-layer `bases`
-    subspace when given, where the moment estimates are not dominated by noise.
+    subspace when given, where the moment estimates are not dominated by noise. The
+    plug-in estimator keeps the loss bounded below (see the module docstring).
 
     Args:
         harmful: Activations, shape (layers, positions, n, d), already scaled.
@@ -90,6 +103,7 @@ def moment_penalty(
                     degree,
                     None if harmful_extra is None else _select(harmful_extra, layer, position, basis),
                     None if harmless_extra is None else _select(harmless_extra, layer, position, basis),
+                    unbiased=False,
                 )
         parts[degree] = total / positions
     return sum(parts.values(), harmful.new_zeros(())), parts
