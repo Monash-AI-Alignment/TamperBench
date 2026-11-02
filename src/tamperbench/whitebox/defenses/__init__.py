@@ -7,6 +7,7 @@ from tamperbench.whitebox.defenses.defense import (
     AlignmentDefense,
     AlignmentDefenseConfig,
 )
+from tamperbench.whitebox.defenses.moment_guard import MomentGuard, MomentGuardConfig
 from tamperbench.whitebox.defenses.registry import DEFENSES_REGISTRY
 from tamperbench.whitebox.defenses.rsn_tune import RSNTune, RSNTuneConfig
 from tamperbench.whitebox.defenses.sdd.sdd import SDD, SDDConfig
@@ -34,6 +35,8 @@ __all__: list[str] = [
     "BoosterConfig",
     "CRLConfig",
     "CTRLConfig",
+    "MomentGuard",
+    "MomentGuardConfig",
     "RSNTune",
     "RSNTuneConfig",
     "SDDConfig",
