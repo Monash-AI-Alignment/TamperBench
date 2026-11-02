@@ -52,7 +52,8 @@ class MomentGuard(AlignmentDefense[MomentGuardConfig]):
 
 def _read_pairs(path: str) -> list[tuple[str, str]]:
     with open(path) as handle:
-        return [(row["prompt"], row["response"]) for row in map(json.loads, handle) if row.strip()]
+        rows = [json.loads(line) for line in handle if line.strip()]
+    return [(row["prompt"], row["response"]) for row in rows]
 
 
 def _encode_all(
