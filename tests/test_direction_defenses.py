@@ -28,18 +28,30 @@ def _unit(d: int, seed: int) -> torch.Tensor:
 
 
 def test_residual_ablation_removes_the_direction_only_for_masked_examples() -> None:
-    """ReFAT trains some examples under ablation: those rows lose the direction, others are untouched."""
+    """ReFAT trains some examples under ablation: those rows lose the direction, others are untouched.
+
+    Checked on what block 2 receives: transformers records `hidden_states` with its own
+    hooks, before ours rewrite the block output, so the recorded states are not ablated.
+    """
     model = _tiny_llama()
     ids = torch.randint(0, 50, (2, 5), generator=torch.Generator().manual_seed(1))
     direction = _unit(16, 2)
+    received: list[torch.Tensor] = []
+    handle = decoder_layers(model)[2].register_forward_pre_hook(
+        lambda _m, args, kwargs: received.append(kwargs.get("hidden_states", args[0] if args else None)),
+        with_kwargs=True,
+    )
     with torch.no_grad():
-        plain = model(input_ids=ids, output_hidden_states=True).hidden_states
+        plain = model(input_ids=ids).logits
         with residual_ablation(model, {2: direction}, mask=torch.tensor([1.0, 0.0])):
-            ablated = model(input_ids=ids, output_hidden_states=True).hidden_states
-    assert ablated[2][0].matmul(direction).abs().max() < 1e-5
-    assert plain[2][0].matmul(direction).abs().max() > 1e-3
-    torch.testing.assert_close(ablated[3][1], plain[3][1])
-    assert not torch.allclose(ablated[3][0], plain[3][0])
+            ablated = model(input_ids=ids).logits
+    handle.remove()
+    before, after = received
+    assert after[0].matmul(direction).abs().max() < 1e-5
+    assert before[0].matmul(direction).abs().max() > 1e-3
+    torch.testing.assert_close(after[1], before[1])
+    torch.testing.assert_close(ablated[1], plain[1])
+    assert not torch.allclose(ablated[0], plain[0])
 
 
 def test_write_ablation_equals_orthogonalised_weights() -> None:

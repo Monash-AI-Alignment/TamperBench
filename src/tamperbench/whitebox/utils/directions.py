@@ -16,7 +16,7 @@ from tamperbench.whitebox.utils.activations import collect
 
 
 def decoder_layers(model: nn.Module) -> nn.ModuleList:
-    """The model's list of decoder blocks (works through PEFT wrappers)."""
+    """Find the model's list of decoder blocks (works through PEFT wrappers)."""
     for module in model.modules():
         if isinstance(module, nn.ModuleList) and len(module) and type(module[0]).__name__.endswith("DecoderLayer"):
             return module
