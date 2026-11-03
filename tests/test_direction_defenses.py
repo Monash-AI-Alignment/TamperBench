@@ -37,10 +37,11 @@ def test_residual_ablation_removes_the_direction_only_for_masked_examples() -> N
     ids = torch.randint(0, 50, (2, 5), generator=torch.Generator().manual_seed(1))
     direction = _unit(16, 2)
     received: list[torch.Tensor] = []
-    handle = decoder_layers(model)[2].register_forward_pre_hook(
-        lambda _m, args, kwargs: received.append(kwargs.get("hidden_states", args[0] if args else None)),
-        with_kwargs=True,
-    )
+
+    def capture(_module: torch.nn.Module, args: tuple, kwargs: dict) -> None:  # pyright: ignore[reportMissingTypeArgument]
+        received.append(kwargs["hidden_states"] if "hidden_states" in kwargs else args[0])
+
+    handle = decoder_layers(model)[2].register_forward_pre_hook(capture, with_kwargs=True)
     with torch.no_grad():
         plain = model(input_ids=ids).logits
         with residual_ablation(model, {2: direction}, mask=torch.tensor([1.0, 0.0])):
