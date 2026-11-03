@@ -20,7 +20,10 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedModel, P
 from typing_extensions import override
 
 from tamperbench.whitebox.defenses.defense import AlignmentDefense
-from tamperbench.whitebox.defenses.moment_guard.activations import (
+from tamperbench.whitebox.defenses.moment_guard.config import MomentGuardConfig
+from tamperbench.whitebox.defenses.moment_guard.moments import MomentBank, moment_penalty
+from tamperbench.whitebox.defenses.registry import register_defense
+from tamperbench.whitebox.utils.activations import (
     Encoded,
     collate,
     collect,
@@ -28,9 +31,6 @@ from tamperbench.whitebox.defenses.moment_guard.activations import (
     gather,
     post_instruction_length,
 )
-from tamperbench.whitebox.defenses.moment_guard.config import MomentGuardConfig
-from tamperbench.whitebox.defenses.moment_guard.moments import MomentBank, moment_penalty
-from tamperbench.whitebox.defenses.registry import register_defense
 from tamperbench.whitebox.utils.names import DefenseName
 from tamperbench.whitebox.utils.ops import run_in_isolation
 

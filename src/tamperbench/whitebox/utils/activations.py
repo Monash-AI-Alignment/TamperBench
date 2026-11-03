@@ -12,7 +12,8 @@ from dataclasses import dataclass
 from typing import cast
 
 import torch
-from transformers import PreTrainedModel, PreTrainedTokenizerBase
+from torch import nn
+from transformers import PreTrainedTokenizerBase
 
 _SENTINEL = "\u2063MOMENT-GUARD-SENTINEL\u2063"
 
@@ -106,7 +107,7 @@ def gather(hidden_states: Sequence[torch.Tensor], layers: Sequence[int], positio
 
 @torch.no_grad()
 def collect(
-    model: PreTrainedModel,
+    model: nn.Module,
     tokenizer: PreTrainedTokenizerBase,
     prompts: Sequence[str],
     layers: Sequence[int],

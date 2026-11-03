@@ -7,13 +7,13 @@ from tokenizers.models import WordLevel
 from tokenizers.pre_tokenizers import Whitespace
 from transformers import PreTrainedTokenizerFast
 
-from tamperbench.whitebox.defenses.moment_guard.activations import collate, encode, post_instruction_length
 from tamperbench.whitebox.defenses.moment_guard.moments import (
     MomentBank,
     moment_penalty,
     polynomial_mmd2,
     whitened_mean_gap,
 )
+from tamperbench.whitebox.utils.activations import collate, encode, post_instruction_length
 
 
 def _tensor_power(x: torch.Tensor, degree: int) -> torch.Tensor:
