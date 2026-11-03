@@ -102,12 +102,14 @@ def train(
                 model.eval()
                 block, direction, gain = select_ablation(model, harmful, safe, config.ablation_alpha)
                 model.train()
+            optimiser.zero_grad(set_to_none=True)
+            # Backward runs inside the hook context: gradient checkpointing recomputes the
+            # forward during backward and must see the same ablation.
             with write_ablation(model, block, direction, config.ablation_alpha):
                 harmful_ce = response_cross_entropy(_forward(model, harmful).logits, harmful["labels"].to(device))
+                (config.gamma_ar * -torch.log(harmful_ce + config.epsilon)).backward()
             safe_ce = response_cross_entropy(_forward(model, safe).logits, safe["labels"].to(device))
-            loss = config.gamma_ar * -torch.log(harmful_ce + config.epsilon) + config.gamma_ret * safe_ce
-            optimiser.zero_grad(set_to_none=True)
-            loss.backward()
+            (config.gamma_ret * safe_ce).backward()
             grad_norm = torch.nn.utils.clip_grad_norm_(params, 1.0)
             optimiser.step()
             if step % config.log_interval == 0 or step == config.num_steps - 1:

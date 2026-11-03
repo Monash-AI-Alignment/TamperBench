@@ -81,6 +81,9 @@ def train(
                 refusal_batch = collate([e for e, _ in refusals[i * half : (i + 1) * half]], pad, 1)
                 utility_batch = collate([e for e, _ in utility[i * half : (i + 1) * half]], pad, 1)
                 ablate = (torch.rand(half, generator=generator, device=device) < config.rfa_probability).float()
+                optimiser.zero_grad(set_to_none=True)
+                # Backward runs inside the hook context: gradient checkpointing recomputes the
+                # forward during backward and must see the same ablation.
                 with residual_ablation(model, directions, mask=ablate):
                     refusal_ce = response_cross_entropy(
                         model(
@@ -89,6 +92,7 @@ def train(
                         ).logits,
                         refusal_batch["labels"].to(device),
                     )
+                    refusal_ce.backward()
                 utility_ce = response_cross_entropy(
                     model(
                         input_ids=utility_batch["input_ids"].to(device),
@@ -96,9 +100,7 @@ def train(
                     ).logits,
                     utility_batch["labels"].to(device),
                 )
-                loss = refusal_ce + utility_ce
-                optimiser.zero_grad(set_to_none=True)
-                loss.backward()
+                utility_ce.backward()
                 grad_norm = torch.nn.utils.clip_grad_norm_([p for p in model.parameters() if p.requires_grad], 1.0)
                 optimiser.step()
                 if step % config.log_interval == 0:
