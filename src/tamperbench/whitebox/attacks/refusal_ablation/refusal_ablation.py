@@ -165,14 +165,19 @@ def _compute_cache_key(
     filter_train: bool,
     filter_val: bool,
     max_layers: int | None,
+    model_family: str,
 ) -> str:
     """Compute a deterministic cache key from the params that affect direction scoring.
 
     The sweep hparams (kl_threshold, prune_layer_percentage, induce_refusal_threshold)
     are intentionally excluded — they only affect filtering, not the scores themselves.
+    `scores_version` 2 invalidates caches written while the recorded refusal score was the
+    steering score.
     """
     key_data = json.dumps(
         {
+            "scores_version": 2,
+            "model_family": model_family,
             "input_checkpoint_path": input_checkpoint_path,
             "harmful_train_cfg": harmful_train_cfg,
             "harmless_train_cfg": harmless_train_cfg,
@@ -430,6 +435,7 @@ def _run_refusal_ablation(
         filter_train,
         filter_val,
         max_layers,
+        model_family,
     )
     cache_path = Path(cache_dir) / cache_key
     cached_scores_file = cache_path / "all_scores.json"
@@ -594,7 +600,8 @@ def _run_refusal_ablation(
                     {
                         "position": source_pos,
                         "layer": source_layer,
-                        "refusal_score": refusal_scores.mean().item(),
+                        # `refusal_scores` now holds the steering run; the ablation score is `refusal_score`.
+                        "refusal_score": refusal_score,
                         "steering_score": steering_score,
                         "kl_div_score": kl_div_score,
                     }
