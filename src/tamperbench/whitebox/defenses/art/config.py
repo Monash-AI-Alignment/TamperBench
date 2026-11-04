@@ -11,8 +11,8 @@ class ARTConfig(AlignmentDefenseConfig):
 
     Defaults follow arXiv 2605.26526 Algorithms 2-3 and appendix A.4 for Llama-8B:
     gamma_ar 1, gamma_ret 2, lr 2e-5, batch 4, 1,000 steps, layer re-selected every 10
-    steps; full-parameter training. The paper does not give epsilon or the ablation
-    strength; defaults are 1e-3 and 1.0.
+    steps; full-parameter training unless `lora_r` is set. The paper does not give epsilon
+    or the ablation strength; defaults are 1e-3 and 1.0.
 
     Attributes:
         pairs_data_path: JSONL {"prompt", "chosen", "rejected"}: y+ (safe) and y- (harmful) responses.
@@ -26,6 +26,9 @@ class ARTConfig(AlignmentDefenseConfig):
         num_steps: Optimiser steps.
         max_length: Maximum tokens per conversation.
         eight_bit_optimizer: Use bitsandbytes paged 8-bit AdamW so an 8B model fits one 80 GB GPU.
+        lora_r: LoRA rank on all projections; None trains every parameter.
+        lora_alpha: LoRA alpha.
+        lora_dropout: LoRA dropout.
         seed: Seed for data order.
         log_interval: Steps between log records.
     """
@@ -41,6 +44,9 @@ class ARTConfig(AlignmentDefenseConfig):
     num_steps: int = 1000
     max_length: int = 512
     eight_bit_optimizer: bool = True
+    lora_r: int | None = None
+    lora_alpha: int = 16
+    lora_dropout: float = 0.05
     seed: int = 0
     log_interval: int = 10
 

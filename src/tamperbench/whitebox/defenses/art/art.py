@@ -18,6 +18,7 @@ import random
 from pathlib import Path
 
 import torch
+from peft import PeftModel
 from transformers import AutoTokenizer, PreTrainedModel
 from typing_extensions import override
 
@@ -28,21 +29,28 @@ from tamperbench.whitebox.utils.activations import Encoded, collate, encode
 from tamperbench.whitebox.utils.directions import decoder_layers, write_ablation
 from tamperbench.whitebox.utils.names import DefenseName
 from tamperbench.whitebox.utils.ops import run_in_isolation
-from tamperbench.whitebox.utils.training import load_model, pad_token_id, read_jsonl, response_cross_entropy, save_model
+from tamperbench.whitebox.utils.training import (
+    load_model,
+    lora_model,
+    pad_token_id,
+    read_jsonl,
+    response_cross_entropy,
+    save_model,
+)
 
 LOG_FILE = "art_log.jsonl"
 
 
 @register_defense(DefenseName.ART, ARTConfig)
 class ART(AlignmentDefense[ARTConfig]):
-    """Abliteration-resistant tuning, full-parameter."""
+    """Abliteration-resistant tuning (full-parameter, or LoRA when `lora_r` is set)."""
 
     @override
     def _run_defense(self) -> Path:
         return run_in_isolation(target=run_art, args=(self.defense_config,), error_context="ART training")
 
 
-def _forward(model: PreTrainedModel, batch: dict[str, torch.Tensor], hidden: bool = False):
+def _forward(model: PreTrainedModel | PeftModel, batch: dict[str, torch.Tensor], hidden: bool = False):
     device = next(model.parameters()).device
     return model(
         input_ids=batch["input_ids"].to(device),
@@ -53,7 +61,7 @@ def _forward(model: PreTrainedModel, batch: dict[str, torch.Tensor], hidden: boo
 
 @torch.no_grad()
 def select_ablation(
-    model: PreTrainedModel, harmful: dict[str, torch.Tensor], safe: dict[str, torch.Tensor], alpha: float
+    model: PreTrainedModel | PeftModel, harmful: dict[str, torch.Tensor], safe: dict[str, torch.Tensor], alpha: float
 ) -> tuple[int, torch.Tensor, float]:
     """ABLITERATE (Alg. 3): the block and direction whose ablation most lowers CE on y-.
 
@@ -80,7 +88,11 @@ def select_ablation(
 
 
 def train(
-    model: PreTrainedModel, pairs: list[tuple[Encoded, Encoded]], config: ARTConfig, pad: int, log_path: Path
+    model: PreTrainedModel | PeftModel,
+    pairs: list[tuple[Encoded, Encoded]],
+    config: ARTConfig,
+    pad: int,
+    log_path: Path,
 ) -> None:
     """Run ART for `num_steps` steps on (safe, harmful) encoded pairs."""
     device = next(model.parameters()).device
@@ -127,7 +139,7 @@ def train(
 
 
 def run_art(config: ARTConfig) -> Path:
-    """Train ART (full parameters) and save the model with its log."""
+    """Train ART and save the (merged) model with its log."""
     if not torch.cuda.is_available():
         raise RuntimeError("ART training requires CUDA")
     torch.manual_seed(config.seed)
@@ -146,9 +158,13 @@ def run_art(config: ARTConfig) -> Path:
         ):
             pairs.append((safe, harmful))
     print(f"{len(pairs)} preference pairs", flush=True)
-    model = load_model(source)
-    model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
-    model.config.use_cache = False
+    model: PreTrainedModel | PeftModel
+    if config.lora_r is None:
+        model = load_model(source)
+        model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+        model.config.use_cache = False
+    else:
+        model = lora_model(source, config.lora_r, config.lora_alpha, config.lora_dropout)
     output.mkdir(parents=True, exist_ok=True)
     train(model, pairs, config, pad_token_id(tokenizer), output / LOG_FILE)
     save_model(model, source, output)
