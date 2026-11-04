@@ -190,7 +190,8 @@ class WrappedHFModel(WrappedModelBase):
             model_config_path = self.name_or_path / "config.json"
             if model_config_path.exists():
                 model_config_json: dict[str, Any] = json.loads(model_config_path.read_text())
-                self.original_name_or_path: Path = Path(model_config_json["_name_or_path"])
+                # transformers >= 4.5x no longer writes _name_or_path; the checkpoint itself is then the origin.
+                self.original_name_or_path: Path = Path(model_config_json.get("_name_or_path") or self.name_or_path)
                 logger.info(f"Original model path set to {self.original_name_or_path}")
 
         # Set up the tokenizer

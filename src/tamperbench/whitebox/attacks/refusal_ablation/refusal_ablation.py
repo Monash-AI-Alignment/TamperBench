@@ -62,6 +62,9 @@ class RefusalAblationConfig(TamperAttackConfig):
         filter_val: Whether to filter validation datasets based on refusal scores.
         max_layers: Maximum number of layers to process (None for all layers).
         induce_refusal_threshold: Threshold for inducing refusal in steering.
+        model_family: Chat-format family ("Llama3Instruct", "QwenInstruct", ...), or "auto"
+            to infer it from the checkpoint path, which fails for local paths without the
+            model name.
     """
 
     harmful_train: DatasetConfig | dict[str, Any]
@@ -76,6 +79,7 @@ class RefusalAblationConfig(TamperAttackConfig):
     filter_val: bool = True
     max_layers: int | None = None
     induce_refusal_threshold: float = 0.0
+    model_family: str = "auto"
     cache_dir: str = field(default_factory=lambda: str(Path.home() / ".cache" / "tamperbench" / "refusal_ablation"))
 
     def __post_init__(self) -> None:
@@ -125,6 +129,7 @@ class RefusalAblation(TamperAttack[RefusalAblationConfig]):
                 "max_layers": cfg.max_layers,
                 "induce_refusal_threshold": cfg.induce_refusal_threshold,
                 "cache_dir": cfg.cache_dir,
+                "model_family": cfg.model_family,
             },
             error_context="Refusal ablation attack",
         )
@@ -401,6 +406,7 @@ def _run_refusal_ablation(
     max_layers: int | None,
     induce_refusal_threshold: float,
     cache_dir: str,
+    model_family: str = "auto",
 ) -> None:
     """Run the full refusal ablation attack. Called via run_in_isolation.
 
@@ -446,6 +452,7 @@ def _run_refusal_ablation(
         name_or_path=Path(input_checkpoint_path),
         tokenizer_name_or_path=Path(input_checkpoint_path),
         download_dir=Path(os.environ.get("HF_HOME", str(Path.home() / ".cache" / "huggingface"))) / "hub",
+        model_family=model_family,
     )
     model = WrappedHFModel(model_config)
 
