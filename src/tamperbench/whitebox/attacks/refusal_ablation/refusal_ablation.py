@@ -171,12 +171,12 @@ def _compute_cache_key(
 
     The sweep hparams (kl_threshold, prune_layer_percentage, induce_refusal_threshold)
     are intentionally excluded — they only affect filtering, not the scores themselves.
-    `scores_version` 2 invalidates caches written while the recorded refusal score was the
-    steering score.
+    `scores_version` 3 invalidates caches written while the recorded refusal score was the
+    steering score (v1) or while duplicate refusal token ids made scores NaN (v2).
     """
     key_data = json.dumps(
         {
-            "scores_version": 2,
+            "scores_version": 3,
             "model_family": model_family,
             "input_checkpoint_path": input_checkpoint_path,
             "harmful_train_cfg": harmful_train_cfg,
@@ -476,7 +476,9 @@ def _run_refusal_ablation(
 
     # --- Get refusal tokens (same as run_attack) ---
     tokenized_refusal_strings = model.tokenizer(refusal_strings, add_special_tokens=False).input_ids
-    refusal_tokens = [tokens[0] for tokens in tokenized_refusal_strings]
+    # Deduplicated: most refusal strings share a first token ("I", "As"); counting it once per
+    # string pushes the summed refusal probability above 1 and the log-odds score to NaN.
+    refusal_tokens = sorted({tokens[0] for tokens in tokenized_refusal_strings})
 
     if not cache_hit:
         # --- Load datasets ---
