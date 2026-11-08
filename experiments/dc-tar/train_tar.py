@@ -25,6 +25,7 @@ HERE = Path(__file__).resolve().parent
 
 
 def main() -> None:
+    """Download the pinned base model and run TAR with the offload accelerate config."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--max-steps", type=int, default=None)
