@@ -27,6 +27,9 @@ EXPERIMENT_SLUG="dc-tar"
 RUN_DIR="/scratch3/mur458/${EXPERIMENT_SLUG}/${MODE}-${SLURM_JOB_ID}"
 
 export HF_HOME=/scratch3/mur458/hf
+# tar.py defaults HF_DATASETS_CACHE to $HF_HOME, not the datasets default $HF_HOME/datasets
+# where the login-node staging writes; pin it so offline loads hit the staged cache.
+export HF_DATASETS_CACHE=/scratch3/mur458/hf/datasets
 export TORCH_HOME=/scratch3/mur458/cache/torch
 export TRITON_CACHE_DIR=/scratch3/mur458/cache/triton
 export CUDA_CACHE_PATH=/scratch3/mur458/cache/nv
