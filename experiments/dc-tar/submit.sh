@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run ON virga-login: ./experiments/dc-tar/submit.sh smoke   (2 outer steps, h2gpu, 2 h)
+# Run ON virga-login: ./experiments/dc-tar/submit.sh smoke   (2 outer steps, h24gpu, 12 h)
 #                     ./experiments/dc-tar/submit.sh full    (100 outer steps, gpu, 4 days)
 set -euo pipefail
 
@@ -10,7 +10,8 @@ EXPERIMENT_SLUG="$(basename "$SCRIPT_DIR")"
 SBATCH=/cm/shared/apps/slurm/current/bin/sbatch
 
 case "$MODE" in
-  smoke) OVERRIDES=(--partition=h2gpu --time=02:00:00 --job-name=dc-tar-smoke) ;;
+  # 2 outer steps with offload exceeded h2gpu's 2 h cap (job 37574972, TIMEOUT).
+  smoke) OVERRIDES=(--partition=h24gpu --time=12:00:00 --job-name=dc-tar-smoke) ;;
   full) OVERRIDES=() ;;
   *) echo "unknown mode $MODE" >&2; exit 2 ;;
 esac

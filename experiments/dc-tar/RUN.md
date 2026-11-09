@@ -37,7 +37,7 @@ snapshot_download('meta-llama/Meta-Llama-3-8B-Instruct', revision='8afb486c1db24
 load_dataset('Unified-Language-Model-Alignment/Anthropic_HH_Golden')
 load_dataset('lapisrocks/magpie-bio-filtered')"
 
-./experiments/dc-tar/submit.sh smoke    # 2 outer steps + 2 SFT steps, h2gpu, <= 2 h
+./experiments/dc-tar/submit.sh smoke    # 2 outer steps + 2 SFT steps, h24gpu, <= 12 h
 ```
 
 When the smoke finishes `COMPLETED`, submit the full run:
