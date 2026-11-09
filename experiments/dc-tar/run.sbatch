@@ -37,6 +37,10 @@ export UV_PYTHON_INSTALL_DIR=/scratch3/mur458/.uv/python
 export UV_PROJECT_ENVIRONMENT="/scratch3/mur458/envs/${PROJECT_SLUG}"
 export PYTHONUNBUFFERED=1
 export TOKENIZERS_PARALLELISM=false
+# Compute nodes cannot reach PyPI or the HF LFS CDN: the venv, model and datasets are
+# pre-staged on /scratch3 from virga-login (RUN.md), so the job reads the cache only.
+export HF_HUB_OFFLINE=1
+export HF_DATASETS_OFFLINE=1
 
 mkdir -p "$RUN_DIR" "$HF_HOME" "$TORCH_HOME" "$TRITON_CACHE_DIR" \
   "$CUDA_CACHE_PATH" "$PIP_CACHE_DIR" "$MPLCONFIGDIR" \

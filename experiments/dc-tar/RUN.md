@@ -23,6 +23,20 @@ accumulation x batch 1), as on M3.
 cd /home/mur458/projects/tamperbench   # clone git@github.com:Monash-AI-Alignment/TamperBench.git first if absent
 git fetch origin && git switch experiments/dc-tar-virga && git pull --ff-only
 bash -n experiments/dc-tar/run.sbatch && bash -n experiments/dc-tar/submit.sh
+
+# Compute nodes cannot reach PyPI or the HF LFS CDN, and the job runs with HF_HUB_OFFLINE=1:
+# stage the venv, model and datasets on /scratch3 from the login node first.
+export HF_HOME=/scratch3/mur458/hf UV_CACHE_DIR=/scratch3/mur458/.uv/cache \
+  UV_PYTHON_INSTALL_DIR=/scratch3/mur458/.uv/python \
+  UV_PROJECT_ENVIRONMENT="/scratch3/mur458/envs/$(basename "$PWD")"
+~/.local/bin/uv sync --frozen
+~/.local/bin/uv run --frozen python -c "
+from datasets import load_dataset
+from huggingface_hub import snapshot_download
+snapshot_download('meta-llama/Meta-Llama-3-8B-Instruct', revision='8afb486c1db24fe5011ec46dfbe5b5dccdb575c2')
+load_dataset('Unified-Language-Model-Alignment/Anthropic_HH_Golden')
+load_dataset('lapisrocks/magpie-bio-filtered')"
+
 ./experiments/dc-tar/submit.sh smoke    # 2 outer steps + 2 SFT steps, h2gpu, <= 2 h
 ```
 
