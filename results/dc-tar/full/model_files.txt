@@ -1,0 +1,15 @@
+total 31364478
+-rw-r--r-- 1 mur458 hpc-users        389 Nov 11 10:30 chat_template.jinja
+-rw-r--r-- 1 mur458 hpc-users        683 Nov 11 10:30 config.json
+-rw-r--r-- 1 mur458 hpc-users        194 Nov 11 10:30 generation_config.json
+-rw-r--r-- 1 mur458 hpc-users 4886466168 Nov 11 10:30 model-00001-of-00007.safetensors
+-rw-r--r-- 1 mur458 hpc-users 4832007448 Nov 11 10:30 model-00002-of-00007.safetensors
+-rw-r--r-- 1 mur458 hpc-users 4999813112 Nov 11 10:30 model-00003-of-00007.safetensors
+-rw-r--r-- 1 mur458 hpc-users 4999813128 Nov 11 10:30 model-00004-of-00007.safetensors
+-rw-r--r-- 1 mur458 hpc-users 4832007496 Nov 11 10:30 model-00005-of-00007.safetensors
+-rw-r--r-- 1 mur458 hpc-users 4999813120 Nov 11 10:30 model-00006-of-00007.safetensors
+-rw-r--r-- 1 mur458 hpc-users 2571158184 Nov 11 10:30 model-00007-of-00007.safetensors
+-rw-r--r-- 1 mur458 hpc-users      23986 Nov 11 10:30 model.safetensors.index.json
+-rw-r--r-- 1 mur458 hpc-users        439 Nov 11 10:30 special_tokens_map.json
+-rw-r--r-- 1 mur458 hpc-users      50620 Nov 11 10:30 tokenizer_config.json
+-rw-r--r-- 1 mur458 hpc-users   17210238 Nov 11 10:30 tokenizer.json
